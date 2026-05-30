@@ -1,0 +1,6 @@
+{
+  "name": "초등수학 올림피아드: 학교 대항전",
+  "description": "초등학생을 위한 5개의 인터랙티브 수학 게임과 대항전 랭킹 시스템. 학교의 자존심을 걸고 수학 퀴즈에 도전해 보아요!",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
