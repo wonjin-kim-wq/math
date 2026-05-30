@@ -53,94 +53,102 @@ export default function Leaderboard({
 
         {/* Dynamic School bars leaderboard */}
         <div className="space-y-3 flex-1 overflow-y-auto max-h-[385px] pr-1 pb-2">
-          {sortedSchools.map((school, idx) => {
-            const rank = idx + 1;
-            const isTop3 = rank <= 3;
-            const sizePercent = (school.score / maxScore) * 100;
-            const isMyRepresentSchool = currentSchool?.id === school.id;
+          {sortedSchools.length > 0 ? (
+            sortedSchools.map((school, idx) => {
+              const rank = idx + 1;
+              const isTop3 = rank <= 3;
+              const sizePercent = (school.score / maxScore) * 100;
+              const isMyRepresentSchool = currentSchool?.id === school.id;
 
-            const medalDict: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
+              const medalDict: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
-            return (
-              <motion.div
-                key={school.id}
-                id={`leaderboard-item-${school.id}`}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.04 }}
-                className={`p-3.5 rounded-2xl border flex items-center justify-between gap-4 transition-all relative overflow-hidden ${
-                  isMyRepresentSchool
-                    ? 'border-[#3182F6] bg-blue-50/20'
-                    : 'border-[#F2F4F6] bg-white hover:border-[#E5E8EB]'
-                }`}
-              >
-                {/* Ranking Index / Medal */}
-                <div className="flex items-center gap-2.5 shrink-0 z-10">
-                  <div className="w-7 h-7 flex items-center justify-center font-mono font-black text-sm text-[#4E5968]">
-                    {isTop3 ? (
-                      <span className="text-xl select-none">{medalDict[rank]}</span>
-                    ) : (
-                      <span>{rank}</span>
-                    )}
-                  </div>
-
-                  {/* Icon Shield representation */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center ${school.color} shadow-xs select-none relative`}>
-                    <div className="absolute inset-0 bg-white/10 rounded-full" />
-                    <span className="text-lg z-10">{school.mascot}</span>
-                  </div>
-                </div>
-
-                {/* School title & progressive bar charts */}
-                <div className="flex-1 min-w-0 z-10">
-                  <div className="flex items-baseline justify-between mb-1.5 gap-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <p className="font-extrabold text-[#191F28] text-xs truncate">
-                        {school.name}
-                      </p>
-                      {isMyRepresentSchool && (
-                        <span className="text-[9px] bg-[#3182F6] text-white font-extrabold px-1.5 py-0.5 rounded-md shrink-0">
-                          My 등교
-                        </span>
+              return (
+                <motion.div
+                  key={school.id}
+                  id={`leaderboard-item-${school.id}`}
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.04 }}
+                  className={`p-3.5 rounded-2xl border flex items-center justify-between gap-4 transition-all relative overflow-hidden ${
+                    isMyRepresentSchool
+                      ? 'border-[#3182F6] bg-blue-50/20'
+                      : 'border-[#F2F4F6] bg-white hover:border-[#E5E8EB]'
+                  }`}
+                >
+                  {/* Ranking Index / Medal */}
+                  <div className="flex items-center gap-2.5 shrink-0 z-10">
+                    <div className="w-7 h-7 flex items-center justify-center font-mono font-black text-sm text-[#4E5968]">
+                      {isTop3 ? (
+                        <span className="text-xl select-none">{medalDict[rank]}</span>
+                      ) : (
+                        <span>{rank}</span>
                       )}
                     </div>
-                    
-                    <p className="font-mono text-xs font-black text-[#191F28] shrink-0">
-                      {school.score.toLocaleString()} <span className="text-[10px] font-semibold text-[#8B95A1]">점</span>
-                    </p>
+
+                    {/* Icon Shield representation */}
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center ${school.color} shadow-xs select-none relative`}>
+                      <div className="absolute inset-0 bg-white/10 rounded-full" />
+                      <span className="text-lg z-10">{school.mascot}</span>
+                    </div>
                   </div>
 
-                  {/* Horizontal visual comparative bars */}
-                  <div className="h-1.5 bg-[#F2F4F6] rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${sizePercent}%` }}
-                      transition={{ duration: 1, ease: 'easeOut' }}
-                      className={`h-full rounded-full ${school.color}`}
-                    />
-                  </div>
-                </div>
+                  {/* School title & progressive bar charts */}
+                  <div className="flex-1 min-w-0 z-10">
+                    <div className="flex items-baseline justify-between mb-1.5 gap-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="font-extrabold text-[#191F28] text-xs truncate">
+                          {school.name}
+                        </p>
+                        {isMyRepresentSchool && (
+                          <span className="text-[9px] bg-[#3182F6] text-white font-extrabold px-1.5 py-0.5 rounded-md shrink-0">
+                            My 등교
+                          </span>
+                        )}
+                      </div>
+                      
+                      <p className="font-mono text-xs font-black text-[#191F28] shrink-0">
+                        {school.score.toLocaleString()} <span className="text-[10px] font-semibold text-[#8B95A1]">점</span>
+                      </p>
+                    </div>
 
-                {/* Rank change ▲/▼ indicators */}
-                <div className="w-12 shrink-0 text-center flex flex-col items-center justify-center z-10 font-medium">
-                  {school.rankChange > 0 ? (
-                    <span className="text-emerald-500 font-mono text-xs font-bold flex items-center gap-0.5">
-                      <TrendingUp className="w-3.5 h-3.5 fill-current" />
-                      {school.rankChange}
-                    </span>
-                  ) : school.rankChange < 0 ? (
-                    <span className="text-rose-500 font-mono text-xs font-bold flex items-center gap-0.5">
-                      <TrendingDown className="w-3.5 h-3.5 fill-current" />
-                      {Math.abs(school.rankChange)}
-                    </span>
-                  ) : (
-                    <span className="text-slate-300 text-xs font-mono">-</span>
-                  )}
-                  <p className="text-[9px] text-[#8B95A1] font-mono mt-0.5">{school.playerCount}명</p>
-                </div>
-              </motion.div>
-            );
-          })}
+                    {/* Horizontal visual comparative bars */}
+                    <div className="h-1.5 bg-[#F2F4F6] rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${sizePercent}%` }}
+                        transition={{ duration: 1, ease: 'easeOut' }}
+                        className={`h-full rounded-full ${school.color}`}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Rank change ▲/▼ indicators */}
+                  <div className="w-12 shrink-0 text-center flex flex-col items-center justify-center z-10 font-medium">
+                    {school.rankChange > 0 ? (
+                      <span className="text-emerald-500 font-mono text-xs font-bold flex items-center gap-0.5">
+                        <TrendingUp className="w-3.5 h-3.5 fill-current" />
+                        {school.rankChange}
+                      </span>
+                    ) : school.rankChange < 0 ? (
+                      <span className="text-rose-500 font-mono text-xs font-bold flex items-center gap-0.5">
+                        <TrendingDown className="w-3.5 h-3.5 fill-current" />
+                        {Math.abs(school.rankChange)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 text-xs font-mono">-</span>
+                    )}
+                    <p className="text-[9px] text-[#8B95A1] font-mono mt-0.5">{school.playerCount}명</p>
+                  </div>
+                </motion.div>
+              );
+            })
+          ) : (
+            <div className="text-center py-20 text-[#8B95A1]">
+              <Trophy className="w-10 h-10 text-slate-300 mx-auto block mb-3 animate-pulse" />
+              <p className="font-bold text-xs">현재 등록된 대항전 학교가 없습니다.</p>
+              <p className="text-[10.5px] text-[#8B95A1]/70 mt-1">우리 학교를 등록하고 1위 스코어를 쟁취하세요! 🏆</p>
+            </div>
+          )}
         </div>
       </div>
 

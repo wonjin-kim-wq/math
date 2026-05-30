@@ -4,6 +4,20 @@ import { Award, Zap, Trophy, HelpCircle, School as SchoolIcon, Star, Sparkles, S
 import { School, Cheer, GameType } from './types';
 import { INITIAL_SCHOOLS, INITIAL_CHEERS, GAMES } from './data/schools';
 import { playSelect, playVictory } from './components/SoundEffects';
+import { db, isFirebaseConfigured } from './firebase';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  increment,
+  addDoc,
+  query,
+  orderBy,
+  limit,
+  serverTimestamp
+} from 'firebase/firestore';
 
 // Lazy imports or explicit components imports
 import GameContainer from './components/GameContainer';
@@ -28,46 +42,109 @@ export default function App() {
   const [selectedGame, setSelectedGame] = useState<GameType | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
 
-  // 1. Initial State Loading from localStorage
+  // 1. Initial State Loading & Firebase Real-time Subscriptions
   useEffect(() => {
-    try {
-      const storedSchools = localStorage.getItem('math_olympiad_schools');
-      if (storedSchools) {
-        setSchools(JSON.parse(storedSchools));
-      } else {
+    const storedNickname = localStorage.getItem('math_olympiad_nickname');
+    const storedContribution = localStorage.getItem('math_olympiad_contribution');
+    if (storedNickname) setNickname(storedNickname);
+    if (storedContribution) setMyContribution(Number(storedContribution));
+
+    const storedSchoolId = localStorage.getItem('math_olympiad_current_school_id');
+
+    if (isFirebaseConfigured && db) {
+      // A. Real-time Schools Listener
+      const unsubSchools = onSnapshot(collection(db, 'schools'), (snapshot) => {
+        const schoolsList: School[] = [];
+        snapshot.forEach((doc) => {
+          schoolsList.push(doc.data() as School);
+        });
+        setSchools(schoolsList);
+        localStorage.setItem('math_olympiad_schools', JSON.stringify(schoolsList));
+
+        if (storedSchoolId) {
+          const match = schoolsList.find((s) => s.id === storedSchoolId);
+          if (match) setCurrentSchool(match);
+        }
+      }, (error) => {
+        console.error("Firestore schools listener failed:", error);
+      });
+
+      // B. Real-time Cheers Listener
+      const cheersQuery = query(collection(db, 'cheers'), orderBy('createdAt', 'desc'), limit(20));
+      const unsubCheers = onSnapshot(cheersQuery, (snapshot) => {
+        const cheersList: Cheer[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          let timeString = '방금 전';
+          
+          if (data.createdAt) {
+            try {
+              const dateVal = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt.seconds * 1000);
+              timeString = dateVal.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch (err) {
+              timeString = '방금 전';
+            }
+          }
+          
+          cheersList.push({
+            id: docSnap.id,
+            schoolId: data.schoolId || '',
+            schoolName: data.schoolName || '',
+            author: data.author || '익명의초등생',
+            text: data.text || '',
+            timestamp: timeString,
+          });
+        });
+        setCheers(cheersList);
+        localStorage.setItem('math_olympiad_cheers', JSON.stringify(cheersList));
+      }, (error) => {
+        console.error("Firestore cheers listener failed:", error);
+      });
+
+      return () => {
+        unsubSchools();
+        unsubCheers();
+      };
+    } else {
+      // LocalStorage Fallback Mode
+      try {
+        const storedSchools = localStorage.getItem('math_olympiad_schools');
+        if (storedSchools) {
+          setSchools(JSON.parse(storedSchools));
+        } else {
+          setSchools(INITIAL_SCHOOLS);
+          localStorage.setItem('math_olympiad_schools', JSON.stringify(INITIAL_SCHOOLS));
+        }
+
+        const storedCheers = localStorage.getItem('math_olympiad_cheers');
+        if (storedCheers) {
+          setCheers(JSON.parse(storedCheers));
+        } else {
+          setCheers(INITIAL_CHEERS);
+          localStorage.setItem('math_olympiad_cheers', JSON.stringify(INITIAL_CHEERS));
+        }
+
+        if (storedSchoolId && storedSchools) {
+          const parsed: School[] = JSON.parse(storedSchools);
+          const match = parsed.find((s) => s.id === storedSchoolId);
+          if (match) setCurrentSchool(match);
+        }
+      } catch (e) {
         setSchools(INITIAL_SCHOOLS);
-        localStorage.setItem('math_olympiad_schools', JSON.stringify(INITIAL_SCHOOLS));
-      }
-
-      const storedCheers = localStorage.getItem('math_olympiad_cheers');
-      if (storedCheers) {
-        setCheers(JSON.parse(storedCheers));
-      } else {
         setCheers(INITIAL_CHEERS);
-        localStorage.setItem('math_olympiad_cheers', JSON.stringify(INITIAL_CHEERS));
       }
-
-      const storedSchoolId = localStorage.getItem('math_olympiad_current_school_id');
-      const storedNickname = localStorage.getItem('math_olympiad_nickname');
-      const storedContribution = localStorage.getItem('math_olympiad_contribution');
-
-      if (storedNickname) setNickname(storedNickname);
-      if (storedContribution) setMyContribution(Number(storedContribution));
-
-      if (storedSchoolId && storedSchools) {
-        const parsed: School[] = JSON.parse(storedSchools);
-        const match = parsed.find((s) => s.id === storedSchoolId);
-        if (match) setCurrentSchool(match);
-      } else if (storedSchoolId && !storedSchools) {
-        const match = INITIAL_SCHOOLS.find((s) => s.id === storedSchoolId);
-        if (match) setCurrentSchool(match);
-      }
-    } catch (e) {
-      // safe fallback on schema parse failures
-      setSchools(INITIAL_SCHOOLS);
-      setCheers(INITIAL_CHEERS);
     }
   }, []);
+
+  // Synchronize currentSchool with updated school data from the schools list
+  useEffect(() => {
+    if (currentSchool) {
+      const updated = schools.find((s) => s.id === currentSchool.id);
+      if (updated && (updated.score !== currentSchool.score || updated.playerCount !== currentSchool.playerCount)) {
+        setCurrentSchool(updated);
+      }
+    }
+  }, [schools, currentSchool]);
 
   // Update profile attributes helper
   const handleSelectSchool = (school: School) => {
@@ -82,50 +159,73 @@ export default function App() {
   };
 
   // Submit/Add score function
-  const handleAddScore = (points: number) => {
+  const handleAddScore = async (points: number) => {
     if (!currentSchool) return;
-
-    const updatedSchools = schools.map((s) => {
-      if (s.id === currentSchool.id) {
-        const nextScore = s.score + points;
-        return {
-          ...s,
-          score: nextScore,
-          playerCount: s.playerCount + 1,
-        };
-      }
-      return s;
-    });
-
-    setSchools(updatedSchools);
-    localStorage.setItem('math_olympiad_schools', JSON.stringify(updatedSchools));
-
-    // Update active School reference
-    const updatedMySchool = updatedSchools.find((s) => s.id === currentSchool.id);
-    if (updatedMySchool) setCurrentSchool(updatedMySchool);
 
     // Track contribution score points
     const nextContribution = myContribution + points;
     setMyContribution(nextContribution);
     localStorage.setItem('math_olympiad_contribution', String(nextContribution));
 
-    // Post automatic celebrate cheer to the timeline!
-    const automaticCheer: Cheer = {
-      id: `cheer_auto_${Date.now()}`,
-      schoolId: currentSchool.id,
-      schoolName: currentSchool.name,
-      author: nickname,
-      text: `🎉 수학 올림피아드에서 무려 ${points.toLocaleString()}점을 우리 학교에 보탰습니다! 최고!`,
-      timestamp: '방금 전',
-    };
+    if (isFirebaseConfigured && db) {
+      try {
+        // Update Firestore school score and playerCount
+        const schoolDocRef = doc(db, 'schools', currentSchool.id);
+        await updateDoc(schoolDocRef, {
+          score: increment(points),
+          playerCount: increment(1)
+        });
 
-    const nextCheers = [automaticCheer, ...cheers].slice(0, 20); // Keep max 20 cheers
-    setCheers(nextCheers);
-    localStorage.setItem('math_olympiad_cheers', JSON.stringify(nextCheers));
+        // Add auto cheer message to Firestore
+        await addDoc(collection(db, 'cheers'), {
+          schoolId: currentSchool.id,
+          schoolName: currentSchool.name,
+          author: nickname,
+          text: `🎉 수학 올림피아드에서 무려 ${points.toLocaleString()}점을 우리 학교에 보탰습니다! 최고!`,
+          createdAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.error("Failed to add score/cheer to Firebase:", e);
+      }
+    } else {
+      // Local storage fallback
+      const updatedSchools = schools.map((s) => {
+        if (s.id === currentSchool.id) {
+          const nextScore = s.score + points;
+          return {
+            ...s,
+            score: nextScore,
+            playerCount: s.playerCount + 1,
+          };
+        }
+        return s;
+      });
+
+      setSchools(updatedSchools);
+      localStorage.setItem('math_olympiad_schools', JSON.stringify(updatedSchools));
+
+      // Update active School reference
+      const updatedMySchool = updatedSchools.find((s) => s.id === currentSchool.id);
+      if (updatedMySchool) setCurrentSchool(updatedMySchool);
+
+      // Post automatic celebrate cheer to the timeline!
+      const automaticCheer: Cheer = {
+        id: `cheer_auto_${Date.now()}`,
+        schoolId: currentSchool.id,
+        schoolName: currentSchool.name,
+        author: nickname,
+        text: `🎉 수학 올림피아드에서 무려 ${points.toLocaleString()}점을 우리 학교에 보탰습니다! 최고!`,
+        timestamp: '방금 전',
+      };
+
+      const nextCheers = [automaticCheer, ...cheers].slice(0, 20); // Keep max 20 cheers
+      setCheers(nextCheers);
+      localStorage.setItem('math_olympiad_cheers', JSON.stringify(nextCheers));
+    }
   };
 
   // Register New School
-  const handleRegisterSchool = (newSchoolData: Omit<School, 'score' | 'playerCount' | 'rankChange'>) => {
+  const handleRegisterSchool = async (newSchoolData: Omit<School, 'score' | 'playerCount' | 'rankChange'>) => {
     const newSchool: School = {
       ...newSchoolData,
       score: 100, // Starts with a small layout bonus!
@@ -133,9 +233,26 @@ export default function App() {
       rankChange: 0,
     };
 
-    const nextSchools = [...schools, newSchool];
-    setSchools(nextSchools);
-    localStorage.setItem('math_olympiad_schools', JSON.stringify(nextSchools));
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'schools', newSchool.id), newSchool);
+        // Also add an introductory cheer
+        await addDoc(collection(db, 'cheers'), {
+          schoolId: newSchool.id,
+          schoolName: newSchool.name,
+          author: nickname,
+          text: `🏫 우리 학교가 새로 등교했습니다! 모두 함께 응원해요! ⚡🔥`,
+          createdAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.error("Failed to register school in Firebase:", e);
+      }
+    } else {
+      // Local fallback
+      const nextSchools = [...schools, newSchool];
+      setSchools(nextSchools);
+      localStorage.setItem('math_olympiad_schools', JSON.stringify(nextSchools));
+    }
 
     // Auto log player into newly registered school!
     setCurrentSchool(newSchool);
@@ -143,21 +260,36 @@ export default function App() {
   };
 
   // Register Custom Cheer Message
-  const handleAddCheerMsg = (text: string, author: string) => {
+  const handleAddCheerMsg = async (text: string, author: string) => {
     if (!currentSchool) return;
 
-    const newCheer: Cheer = {
-      id: `cheer_${Date.now()}`,
-      schoolId: currentSchool.id,
-      schoolName: currentSchool.name,
-      author,
-      text,
-      timestamp: '방금 전',
-    };
+    if (isFirebaseConfigured && db) {
+      try {
+        await addDoc(collection(db, 'cheers'), {
+          schoolId: currentSchool.id,
+          schoolName: currentSchool.name,
+          author,
+          text,
+          createdAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.error("Failed to post custom cheer to Firebase:", e);
+      }
+    } else {
+      // Local fallback
+      const newCheer: Cheer = {
+        id: `cheer_${Date.now()}`,
+        schoolId: currentSchool.id,
+        schoolName: currentSchool.name,
+        author,
+        text,
+        timestamp: '방금 전',
+      };
 
-    const nextCheers = [newCheer, ...cheers].slice(0, 20);
-    setCheers(nextCheers);
-    localStorage.setItem('math_olympiad_cheers', JSON.stringify(nextCheers));
+      const nextCheers = [newCheer, ...cheers].slice(0, 20);
+      setCheers(nextCheers);
+      localStorage.setItem('math_olympiad_cheers', JSON.stringify(nextCheers));
+    }
   };
 
   // Reset local championship state to default list
@@ -165,12 +297,16 @@ export default function App() {
     if (window.confirm('게임의 모든 데이터(등록된 학교, 응원글, 개인 기여 점수)를 초기화할까요?')) {
       playSelect();
       localStorage.clear();
-      setSchools(INITIAL_SCHOOLS);
-      setCheers(INITIAL_CHEERS);
+      
       setCurrentSchool(null);
       setNickname('새싹수학자');
       setMyContribution(0);
       setSelectedGame(null);
+      
+      if (!isFirebaseConfigured) {
+        setSchools(INITIAL_SCHOOLS);
+        setCheers(INITIAL_CHEERS);
+      }
     }
   };
 
