@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Plus, School as SchoolIcon, Shield, Check, MapPin, Smile } from 'lucide-react';
 import { School } from '../types';
 import { playSelect } from './SoundEffects';
+import { searchSchools, SearchedSchool } from '../services/schoolApi';
 
 interface SchoolSelectionProps {
   schools: School[];
@@ -11,8 +12,13 @@ interface SchoolSelectionProps {
   onRegisterSchool: (newSchool: Omit<School, 'score' | 'playerCount' | 'rankChange'>) => void;
 }
 
-const REGIONS = ['전체', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '경기', '강원', '제주'];
-const MASCOTS = ['🐯', '🐬', '🦁', '🦅', '🦉', '🐻', '🦊', '🐼', '🐨', '🦄', '🐰', '🐯', '🌳', '⭐️'];
+const REGIONS = [
+  '전체', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
+  '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주'
+];
+
+const MASCOTS = ['🐯', '🐬', '🦁', '🦅', '🦉', '🐻', '🦊', '🐼', '🐨', '🦄', '🐰', '🌳', '⭐️', '💡', '🍀'];
+
 const THEME_COLORS = [
   { name: 'Red', bg: 'bg-red-500', text: 'text-red-500' },
   { name: 'Blue', bg: 'bg-blue-500', text: 'text-blue-500' },
@@ -39,25 +45,53 @@ export default function SchoolSelection({
   const [newMascot, setNewMascot] = useState('🐯');
   const [newColorIdx, setNewColorIdx] = useState(0);
 
+  // NEIS API Search States
+  const [apiSearchQuery, setApiSearchQuery] = useState('');
+  const [apiSearchResults, setApiSearchResults] = useState<SearchedSchool[]>([]);
+  const [selectedApiSchool, setSelectedApiSchool] = useState<SearchedSchool | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+
   const handleSelect = (school: School) => {
     playSelect();
     onSelectSchool(school);
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim()) return;
+  const handleApiSearch = async () => {
+    const keyword = apiSearchQuery.trim();
+    if (!keyword) return;
 
     playSelect();
-    // Auto-append '초등학교' if lacking
-    let cleanName = newName.trim();
-    if (!cleanName.endsWith('초등학교')) {
-      cleanName = cleanName + '초등학교';
+    setIsSearching(true);
+    setHasSearched(true);
+    try {
+      const results = await searchSchools(keyword);
+      setApiSearchResults(results);
+      setSelectedApiSchool(null); // Reset selection
+      setNewName('');
+    } catch (error) {
+      console.error('Failed to search schools:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedApiSchool || !newName) return;
+
+    // Check if the school is already registered in our schools list
+    const isAlreadyRegistered = schools.some(s => s.name === newName);
+    if (isAlreadyRegistered) {
+      alert('이미 등록된 학교입니다. 대표 학교 리스트에서 찾아서 [등교] 버튼을 클릭해 주세요!');
+      return;
     }
 
+    playSelect();
+
     onRegisterSchool({
-      id: `school_${Date.now()}`,
-      name: cleanName,
+      id: selectedApiSchool.id,
+      name: newName,
       region: newRegion,
       mascot: newMascot,
       color: THEME_COLORS[newColorIdx].bg,
@@ -66,6 +100,10 @@ export default function SchoolSelection({
 
     // Reset Form
     setNewName('');
+    setApiSearchQuery('');
+    setApiSearchResults([]);
+    setSelectedApiSchool(null);
+    setHasSearched(false);
     setShowAddForm(false);
   };
 
@@ -89,6 +127,11 @@ export default function SchoolSelection({
           onClick={() => {
             playSelect();
             setShowAddForm(!showAddForm);
+            // Reset API states when toggling
+            setApiSearchQuery('');
+            setApiSearchResults([]);
+            setSelectedApiSchool(null);
+            setHasSearched(false);
           }}
           className="text-xs bg-blue-50 hover:bg-blue-100 font-bold text-[#3182F6] px-4 py-2 rounded-full flex items-center gap-1 cursor-pointer transition-colors"
         >
@@ -108,92 +151,172 @@ export default function SchoolSelection({
             onSubmit={handleRegisterSubmit}
             className="space-y-4 bg-[#F9FAFB] p-5 rounded-2xl border border-[#F2F4F6]"
           >
-            {/* School Name */}
-            <div>
-              <label htmlFor="school-name-input" className="block text-xs font-bold text-[#4E5968] mb-1.5">학교 이름 입력</label>
-              <input
-                id="school-name-input"
-                type="text"
-                placeholder="예: 서울반포, 한빛"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                maxLength={10}
-                required
-                className="w-full bg-white border border-[#E5E8EB] outline-none focus:border-[#3182F6] rounded-xl px-3.5 py-2.5 text-sm text-[#191F28] font-medium transition-colors"
-              />
-              <span className="text-[10px] text-[#8B95A1] mt-1.5 block">끝에 '초등학교'가 입력되지 않으면 자동으로 붙습니다!</span>
-            </div>
-
-            {/* Region choice */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="school-region-select" className="block text-xs font-bold text-[#4E5968] mb-1.5">소재지 선택</label>
-                <select
-                  id="school-region-select"
-                  value={newRegion}
-                  onChange={(e) => setNewRegion(e.target.value)}
-                  className="w-full bg-white border border-[#E5E8EB] outline-none rounded-xl px-2.5 py-2.5 text-xs text-[#4E5968] font-medium cursor-pointer"
+            {/* NEIS API School Search Box */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-[#4E5968]">전국 초등학교 검색 (나이스 API)</label>
+              
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="예: 안동, 포항, 가락, 세종"
+                  value={apiSearchQuery}
+                  onChange={(e) => setApiSearchQuery(e.target.value)}
+                  className="flex-1 bg-white border border-[#E5E8EB] outline-none focus:border-[#3182F6] rounded-xl px-3.5 py-2 text-xs text-[#191F28] font-medium transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleApiSearch();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleApiSearch}
+                  disabled={isSearching || !apiSearchQuery.trim()}
+                  className="px-4 bg-[#3182F6] text-white text-xs font-bold rounded-xl hover:bg-blue-600 disabled:opacity-50 transition-colors cursor-pointer shrink-0"
                 >
-                  {REGIONS.filter(r => r !== '전체').map((reg) => (
-                    <option key={reg} value={reg}>{reg}</option>
-                  ))}
-                </select>
+                  {isSearching ? '검색 중...' : '검색'}
+                </button>
               </div>
 
-              {/* Theme custom colors */}
-              <div>
-                <label className="block text-xs font-bold text-[#4E5968] mb-1.5">시그니처 컬러</label>
-                <div className="flex gap-1.5 pt-1">
-                  {THEME_COLORS.map((color, idx) => (
-                    <button
-                      key={color.name}
-                      type="button"
-                      onClick={() => {
-                        playSelect();
-                        setNewColorIdx(idx);
-                      }}
-                      className={`w-5 h-5 rounded-full ${color.bg} cursor-pointer transition-transform relative ${
-                        newColorIdx === idx ? 'scale-120 ring-2 ring-white shadow-xs' : 'opacity-85'
-                      }`}
-                    >
-                      {newColorIdx === idx && (
-                        <Check className="w-3 h-3 text-white absolute inset-0 m-auto" />
-                      )}
-                    </button>
-                  ))}
+              {/* API Search Results List */}
+              {hasSearched && (
+                <div className="bg-white rounded-xl border border-[#E5E8EB] max-h-[140px] overflow-y-auto p-1.5 space-y-1">
+                  {apiSearchResults.length > 0 ? (
+                    apiSearchResults.map((school) => {
+                      const isSelected = selectedApiSchool?.id === school.id;
+                      return (
+                        <button
+                          key={school.id}
+                          type="button"
+                          onClick={() => {
+                            playSelect();
+                            setSelectedApiSchool(school);
+                            setNewName(school.name);
+                            setNewRegion(school.region);
+                          }}
+                          className={`w-full text-left p-2.5 rounded-lg text-xs transition-all flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-blue-50 border border-blue-200 text-[#3182F6] font-bold'
+                              : 'hover:bg-slate-50 border border-transparent text-[#4E5968]'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className="bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded-md text-[9px] mr-1.5">
+                              {school.region}
+                            </span>
+                            <strong>{school.name}</strong>
+                            <span className="text-[10px] text-slate-400 block mt-0.5 font-normal truncate max-w-[240px]">
+                              {school.address}
+                            </span>
+                          </div>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-[#3182F6] stroke-[3]" />}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <p className="text-center py-6 text-slate-400 text-xs">검색 결과가 없습니다.</p>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Mascot Emojis selections */}
-            <div>
-              <label className="block text-xs font-bold text-[#4E5968] mb-1.5">마스코트 캐릭터 아이콘</label>
-              <div className="flex flex-wrap gap-2 pt-1 h-20 overflow-y-auto bg-white p-2 rounded-xl border border-[#F2F4F6]">
-                {MASCOTS.map((emoji) => (
-                  <button
-                    key={emoji + 'key'}
-                    type="button"
-                    onClick={() => {
-                      playSelect();
-                      setNewMascot(emoji);
-                    }}
-                    className={`w-8 h-8 text-sm flex items-center justify-center rounded-lg cursor-pointer transition-colors ${
-                      newMascot === emoji ? 'bg-blue-50 font-bold text-[#3182F6]' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
+            {/* Selected School Confirmation display */}
+            {selectedApiSchool && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-[#3182F6] font-bold flex items-center justify-between">
+                <div>
+                  <span className="bg-[#3182F6] text-white text-[9px] px-1.5 py-0.5 rounded-md mr-1.5 font-black uppercase">선택됨</span>
+                  {selectedApiSchool.name} ({selectedApiSchool.region})
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playSelect();
+                    setSelectedApiSchool(null);
+                    setNewName('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 font-normal cursor-pointer text-xs"
+                >
+                  취소
+                </button>
               </div>
-            </div>
+            )}
+
+            {/* Custom Theme Colors & Mascot selection (only shows if school is selected) */}
+            {selectedApiSchool && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="space-y-4 pt-1"
+              >
+                {/* Region & Color selectors */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[#4E5968] mb-1.5">소재지</label>
+                    <input
+                      type="text"
+                      value={newRegion}
+                      disabled
+                      className="w-full bg-[#E5E8EB]/30 border border-[#E5E8EB] rounded-xl px-3 py-2.5 text-xs text-slate-500 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#4E5968] mb-1.5">시그니처 컬러</label>
+                    <div className="flex gap-1.5 pt-1.5">
+                      {THEME_COLORS.map((color, idx) => (
+                        <button
+                          key={color.name}
+                          type="button"
+                          onClick={() => {
+                            playSelect();
+                            setNewColorIdx(idx);
+                          }}
+                          className={`w-5 h-5 rounded-full ${color.bg} cursor-pointer transition-transform relative ${
+                            newColorIdx === idx ? 'scale-120 ring-2 ring-white shadow-xs' : 'opacity-85'
+                          }`}
+                        >
+                          {newColorIdx === idx && (
+                            <Check className="w-3 h-3 text-white absolute inset-0 m-auto" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mascot selection */}
+                <div>
+                  <label className="block text-xs font-bold text-[#4E5968] mb-1.5">마스코트 캐릭터 아이콘</label>
+                  <div className="flex flex-wrap gap-2 pt-1 h-20 overflow-y-auto bg-white p-2 rounded-xl border border-[#F2F4F6]">
+                    {MASCOTS.map((emoji) => (
+                      <button
+                        key={emoji + 'key'}
+                        type="button"
+                        onClick={() => {
+                          playSelect();
+                          setNewMascot(emoji);
+                        }}
+                        className={`w-8 h-8 text-sm flex items-center justify-center rounded-lg cursor-pointer transition-colors ${
+                          newMascot === emoji ? 'bg-blue-50 font-bold text-[#3182F6]' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
             {/* Done button */}
             <button
               id="btn-register-submit"
               type="submit"
-              className="w-full bg-[#3182F6] hover:bg-[#1b64da] text-white font-extrabold py-3.5 rounded-xl text-xs shadow-sm transition-colors cursor-pointer"
+              disabled={!selectedApiSchool}
+              className="w-full bg-[#3182F6] hover:bg-[#1b64da] disabled:opacity-40 text-white font-extrabold py-3.5 rounded-xl text-xs shadow-sm transition-all cursor-pointer"
             >
-              🎉 우리학교 등록하고 대표 학생되기
+              {selectedApiSchool ? `🎉 ${newName} 대표로 등교하기` : '🏫 먼저 검색으로 학교를 선택해 주세요'}
             </button>
           </motion.form>
         ) : (
